@@ -2,6 +2,7 @@ package edu.uw.homographyanalyzer.camera;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.os.Bundle;
 import edu.uw.homographyanalyzer.global.GlobalLogger;
 
 /*
@@ -23,21 +24,42 @@ import edu.uw.homographyanalyzer.global.GlobalLogger;
  * 
  */
 public abstract class BaseImageTaker extends Activity {
-	// Key name of the string that encapsulates the output path
-	// to be parsed by onActivityResult()
-	public static final String INTENT_RESULT_IMAGE_PATH = "IMAGE_PATH";
+	// The path to where the image result should be stored
+	// This is passed when this activity is created
+	
+	// This is the bundle's key
+	public static final String IMAGE_PATH = "IMAGE_PATH";
+	// This is the actual path
+	private String mPath;
+	
+	
+	@Override
+	protected void onCreate(Bundle savedInstanceState) {
+		// TODO Auto-generated method stub
+		super.onCreate(savedInstanceState);
+		mPath = getIntent().getExtras().getString("IMAGE_PATH");
+		if(mPath.equals("")){
+			throw new IllegalArgumentException("BaseImageTaker requires a path" +
+					"							to save the result image!");
+		}
+	}
 
+	/*
+	 * The path where the taken image should be stored
+	 */
+	protected String getImagePath(){
+		return mPath;
+	}
 	
 	/*
 	 * Quit the activity and returns the image path
 	 */
-	protected void finishAndReturnImagePath(String path) {
+	protected void finishAndReturnImagePath() {
 		GlobalLogger.getInstance().logd("Picture taken successfully!");
-		Intent wrappedResult = new Intent();
-		wrappedResult.putExtra(INTENT_RESULT_IMAGE_PATH, path);
-		this.setResult(RESULT_OK, wrappedResult);
+		Intent result = new Intent();
+		result.putExtra(IMAGE_PATH, getImagePath());
+		this.setResult(RESULT_OK, result);
 		this.finish();
-
 	}
 
 	/*

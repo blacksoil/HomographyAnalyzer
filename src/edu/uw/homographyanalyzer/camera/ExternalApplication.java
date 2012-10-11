@@ -15,25 +15,13 @@ import edu.uw.homographyanalyzer.global.GlobalLogger;
  * to get an idea on how to use it
  */
 public class ExternalApplication extends BaseImageTaker {
-
-	private String mTempFilePath;
-	private String mTempFileName;
 	private final static int ACTIVITY_RESULT = 1;
-
-	// Temporary place to store the captured image
-	private File mTemporaryFile;
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
-		super.onCreate(savedInstanceState);
-		
-		// Default directory to store pictures
-		mTempFilePath = getExternalFilesDir(null).getAbsolutePath();
-		mTempFileName = System.currentTimeMillis()+ ".bmp";
-		// Time stamp the image name
-		mTemporaryFile = new File(mTempFilePath, mTempFileName);
+		super.onCreate(savedInstanceState);		
 		GlobalLogger.getInstance().logd(
-				"Camera directory: " + mTemporaryFile.getAbsolutePath());
+				"Camera directory: " + getImagePath());
 		// Start camera intent
 		takePicture();
 	}
@@ -43,7 +31,7 @@ public class ExternalApplication extends BaseImageTaker {
 	 */
 	private void takePicture() {
 		Intent i = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
-		i.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(mTemporaryFile));
+		i.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(new File(getImagePath())));
 		startActivityForResult(i, ACTIVITY_RESULT);
 	}
 
@@ -51,15 +39,19 @@ public class ExternalApplication extends BaseImageTaker {
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		// Picture is taken!
 		if (resultCode == RESULT_OK) {
+			File outFile = new File(getImagePath());
 			try {
-				if(!mTemporaryFile.exists())
+				if(!outFile.exists()){
 					throw new FileNotFoundException();
+				}
+				
 				// Return and quit
-				finishAndReturnImagePath(mTemporaryFile.getAbsolutePath());
+				finishAndReturnImagePath();
 			} catch (FileNotFoundException e) {
 				GlobalLogger.getInstance().loge(
-						"ExternalApplication.java: temporary file not found!");
-				e.printStackTrace();
+						"ExternalApplication.java: temporary file not found = " + 
+						outFile.getAbsolutePath());
+				finishFail();
 			}
 		} else {
 			finishFail();

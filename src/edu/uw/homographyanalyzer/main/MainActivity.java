@@ -16,6 +16,7 @@ import android.widget.Toast;
 import com.example.homographyanalyzer.R;
 
 import edu.uw.homographyanalyzer.camera.BaseImageTaker;
+import edu.uw.homographyanalyzer.camera.ExternalApplication;
 import edu.uw.homographyanalyzer.global.GlobalLogger;
 import edu.uw.homographyanalyzer.global.LoggerInterface;
 import edu.uw.homographyanalyzer.reusable.ComputerVision;
@@ -85,11 +86,15 @@ public class MainActivity extends Activity implements LoggerInterface,
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
 	
-	// Ransac treshold value
+	// Ransac treshold value for homography transformation
 	private int mRansacTreshold;
 	
 	// Logging tag
 	private static final String TAG = "HomographyAnalyzer";
+	
+	// Intent request code
+	private final static int ACTION_TAKE_REFERENCE_IMAGE = 0;
+	private final static int ACTION_TAKE_TARGET_IMAGE = 1;
 	
 	// UI widgets
 	private final static int NUM_OF_BUTTONS = 4;
@@ -116,7 +121,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 	@Override
 	public void onClick(View v) {
 		// TODO Auto-generated method stub
-		logd("Button clicked");
+		//logd("Button clicked");
 		
 		if(txtWorkspaceName.getText().toString().equals("")){
 			loge("Enter workspace name first!");
@@ -124,20 +129,29 @@ public class MainActivity extends Activity implements LoggerInterface,
 		}
 		else{
 			mWorkspaceName = txtWorkspaceName.getText().toString();
-			String workspacePath = getWorkspacePath();
+			if(!checkWorkspacePath()){
+				logd("Skipping things because no appropriate workspace folder!");
+			}
 		}
 		
 		if(v.getId() == btnTakeReference.getId()){
-			
+			Intent cameraTaking = new Intent(this, ExternalApplication.class);
+			File output = new File(mHomePath + mWorkspaceName, "reference.bmp");
+			Bundle b = new Bundle();
+			b.putString(BaseImageTaker.IMAGE_PATH, output.getAbsolutePath()); 
+			cameraTaking.putExtras(b);
+			// Open up the camera application to take picture
+			startActivityForResult(cameraTaking, ACTION_TAKE_REFERENCE_IMAGE);
 		}
 		
 	}
+
 	
 	/*
-	 * Returns the workspace folder path.
+	 * Returns true if workspace path exist
 	 * Will create one if no such folder exists
 	 */
-	public String getWorkspacePath(){
+	public boolean checkWorkspacePath(){
 		// String path
 		String path = mHomePath;
 		// File points to path
@@ -153,11 +167,26 @@ public class MainActivity extends Activity implements LoggerInterface,
 		
 		if(!path_file.exists()){
 			// Try to create the path if it doesn't exist
-			if(!path_file.mkdir()){
+			if(!path_file.mkdirs()){
 				loge("Error on creating the workspace folder!");
+				return false;
 			}
 		}
-		return path;
+		return true;
+	}
+	
+	/*
+	 * Get the complete workspace path
+	 */
+	public String getWorkspacePath(){
+		String out = mHomePath + mWorkspaceName;
+		if(out.charAt(out.length() - 1) != '/')
+			out += "/";
+		return out;
+	}
+	
+	public String getReferenceImagePath(){
+		
 	}
 	
 	@Override
@@ -181,7 +210,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 	@Override
 	public void onInitServiceFinished() {
 		// TODO Auto-generated method stub
-		logd("onInitServiceFinished()");
+		//logd("onInitServiceFinished()");
 	}
 
 	@Override
@@ -196,12 +225,18 @@ public class MainActivity extends Activity implements LoggerInterface,
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		super.onActivityResult(requestCode, resultCode, data);
 		switch (requestCode) {
-		case 123:
-			logd("Camera returns!");
-			if (resultCode == RESULT_OK)
-				logd("Bitmap OKAY: "
-						+ data.getExtras().getString(
-								BaseImageTaker.INTENT_RESULT_IMAGE_PATH));
+		case ACTION_TAKE_REFERENCE_IMAGE:
+			if(resultCode == RESULT_OK){
+				String imagePath;
+				imagePath = data.getExtras().getString(BaseImageTaker.IMAGE_PATH);
+				logd("Reference image taken: " + imagePath);
+			}
+			else{
+				
+			}
+			
+			break;
+		case ACTION_TAKE_TARGET_IMAGE:
 			break;
 		}
 	}
