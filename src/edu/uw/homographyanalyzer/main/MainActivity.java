@@ -1,10 +1,17 @@
 package edu.uw.homographyanalyzer.main;
 
+import java.io.File;
+
 import android.app.Activity;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
+import android.view.View;
+import android.view.View.OnClickListener;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.Toast;
 
 import com.example.homographyanalyzer.R;
 
@@ -66,30 +73,123 @@ import edu.uw.homographyanalyzer.reusable.ComputerVisionCallback;
  *   		MATCHED is the original and target put side by side with inliers 
  *   				feature points connect the 2 images.
  */
-public class MainActivity extends Activity implements LoggerInterface,
-		ComputerVisionCallback {
 
+// Workspace Activity
+public class MainActivity extends Activity implements LoggerInterface,
+		ComputerVisionCallback, OnClickListener {
+
+	// Workspace home folder
+	private static final String mHomePath = "/mnt/sdcard/ApplianceReader/";
+	
+	// Current workspace name
+	// Full workspace path would be mHomePath + mWorkspaceName
+	private String mWorkspaceName;
+	
+	// Ransac treshold value
+	private int mRansacTreshold;
+	
 	// Logging tag
 	private static final String TAG = "HomographyAnalyzer";
-	// CV library ready to be used
-	private boolean mCVLibraryInitialized = false;
-
+	
+	// UI widgets
+	private final static int NUM_OF_BUTTONS = 4;
+	private Button[] mButtons = new Button[NUM_OF_BUTTONS];
+	private Button btnCompute, btnTakeReference, btnTakeTarget, btnBrowseWorkspace;
+	
+	private EditText txtWorkspaceName, txtRansacTreshold, txtLogging;
+	
+	public void initWidgets(){
+		mButtons[0] = btnCompute = (Button) findViewById(R.id.btnCompute);
+		mButtons[1] = btnTakeReference = (Button) findViewById(R.id.btnTakeReference);
+		mButtons[2] = btnTakeTarget = (Button) findViewById(R.id.btnTakeTarget);
+		mButtons[3] = btnBrowseWorkspace = (Button) findViewById(R.id.btnBrowseWorkspace);
+		txtWorkspaceName = (EditText) findViewById(R.id.txtWorkspaceName);
+		txtRansacTreshold = (EditText) findViewById(R.id.txtRansacTreshold);
+		txtLogging = (EditText) findViewById(R.id.txtLogging);
+		
+		for(int i = 0 ; i < NUM_OF_BUTTONS ; i++){
+			mButtons[i].setOnClickListener(this);
+		}
+	}
+	
+	// UI Button click handler
+	@Override
+	public void onClick(View v) {
+		// TODO Auto-generated method stub
+		logd("Button clicked");
+		
+		if(txtWorkspaceName.getText().toString().equals("")){
+			loge("Enter workspace name first!");
+			return;
+		}
+		else{
+			mWorkspaceName = txtWorkspaceName.getText().toString();
+			String workspacePath = getWorkspacePath();
+		}
+		
+		if(v.getId() == btnTakeReference.getId()){
+			
+		}
+		
+	}
+	
+	/*
+	 * Returns the workspace folder path.
+	 * Will create one if no such folder exists
+	 */
+	public String getWorkspacePath(){
+		// String path
+		String path = mHomePath;
+		// File points to path
+		File path_file;
+		
+		// Needs to have / at the end
+		if(mHomePath.charAt(mHomePath.length() - 1) != '/'){
+			path += "/";
+		}
+		path += mWorkspaceName;
+		
+		path_file = new File(path);
+		
+		if(!path_file.exists()){
+			// Try to create the path if it doesn't exist
+			if(!path_file.mkdir()){
+				loge("Error on creating the workspace folder!");
+			}
+		}
+		return path;
+	}
+	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_homography);
 
-		// This needs to be done first because many other components
-		// depend on this global logger
+		// Init UI
+		initWidgets();
+		
+		// This needs to be done first because many other objets
+		// dependent on this global logger
 		new GlobalLogger(this);
+		
+		// Initialize OpenCV engine
 		ComputerVision cv = new ComputerVision(this, this, this);
 		cv.initializeService();
-
-		/*
-		 * logd("Calling camera intent"); Intent i = new Intent(this,
-		 * ExternalApplication.class); startActivityForResult(i, 123);
-		 */
 	}
+	
+
+	@Override
+	public void onInitServiceFinished() {
+		// TODO Auto-generated method stub
+		logd("onInitServiceFinished()");
+	}
+
+	@Override
+	public void onInitServiceFailed() {
+		// TODO Auto-generated method stub
+		loge("onInitServiceFailed()");
+	}
+
 
 	// Called when a started intent returns
 	@Override
@@ -115,25 +215,15 @@ public class MainActivity extends Activity implements LoggerInterface,
 	@Override
 	public void logd(String msg) {
 		Log.d(TAG, msg);
+		Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
 	}
 
 	@Override
 	public void loge(String msg) {
 		Log.e(TAG, msg);
+		Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
 	}
-
-	@Override
-	public void onInitServiceFinished() {
-		// TODO Auto-generated method stub
-		logd("onInitServiceFinished()");
-	}
-
-	@Override
-	public void onInitServiceFailed() {
-		// TODO Auto-generated method stub
-		logd("onInitServiceFailed()");
-		mCVLibraryInitialized = true;
-	}
+	
 
 	@Override
 	public void cvLogd(String msg) {
@@ -143,20 +233,20 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 	@Override
 	public void cvLogd(String tag, String msg) {
-		// TODO Auto-generated method stub
-
+		txtLogging.append(msg);
+		logd(msg);
 	}
 
 	@Override
 	public void cvLoge(String msg) {
-		// TODO Auto-generated method stub
-
+		txtLogging.append(msg);
+		loge(msg);
 	}
 
 	@Override
 	public void cvLoge(String tag, String msg) {
-		// TODO Auto-generated method stub
-
+		loge(msg);
 	}
+
 
 }
