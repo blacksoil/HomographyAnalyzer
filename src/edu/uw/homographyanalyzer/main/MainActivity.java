@@ -1,11 +1,22 @@
 package edu.uw.homographyanalyzer.main;
 
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+
+import org.opencv.android.Utils;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfKeyPoint;
+import org.opencv.core.Point;
+import org.opencv.core.Size;
+import org.opencv.features2d.FeatureDetector;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore.Images.Media;
 import android.util.Log;
 import android.view.Menu;
 import android.view.View;
@@ -22,6 +33,7 @@ import edu.uw.homographyanalyzer.global.GlobalLogger;
 import edu.uw.homographyanalyzer.global.LoggerInterface;
 import edu.uw.homographyanalyzer.reusable.ComputerVision;
 import edu.uw.homographyanalyzer.reusable.ComputerVisionCallback;
+import edu.uw.homographyanalyzer.tools.Utility;
 
 /*
  * Sample Activity meant to demonstrate how to use the implemented
@@ -92,6 +104,9 @@ public class MainActivity extends Activity implements LoggerInterface,
 	// Current workspace name
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
+	
+	// Computer Vision library wrapper
+	private ComputerVision mCV;
 
 	// Ransac treshold value for homography transformation
 	private int mRansacTreshold;
@@ -156,9 +171,75 @@ public class MainActivity extends Activity implements LoggerInterface,
 		
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
+			try {
+				Mat reference = getReferenceMat();
+				String[] target_files = getTargetImagePaths();
+				MatOfKeyPoint ref_kp = mCV.findKeyPoints(FeatureDetector.FAST, reference);
+				logd("ref_kp=" + ref_kp.size());
+				for(int i = 0 ; i < target_files.length ; i++){
+					Mat target = getMatFromFile(target_files[i]);
+					MatOfKeyPoint tgt_kp = mCV.findKeyPoints(FeatureDetector.FAST, target);
+					logd("tgt_kp=" +tgt_kp.size());
+				}
+				
+			} catch (FileNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 			
 		}
 
+	}
+	
+	/*
+	 * Get reference Mat
+	 */
+	public Mat getReferenceMat() throws FileNotFoundException, IOException{
+		return getMatFromFile(getReferenceImagePath());
+	}
+	
+	/*
+	 * Given a file path of a bitmap file
+	 * returns a Mat representation of it
+	 */
+	public Mat getMatFromFile(String path) throws FileNotFoundException, IOException{
+		Bitmap bmp = getBitmapFromFile(path);
+		Mat mat = new Mat();
+		Utils.bitmapToMat(bmp, mat);
+		
+		return mat;
+	}
+	
+	/*
+	 * Get the bitmap of reference image
+	 */
+	public Bitmap getReferenceBitmap() throws FileNotFoundException, IOException {
+		return getBitmapFromFile(getReferenceImagePath());
+	}
+	
+	/*
+	 * Return the absolute path for each of the target images
+	 */
+	public String[] getTargetImagePaths(){
+		File target_image_path = new File(getTargetFolderPath());
+		File[] images = target_image_path.listFiles();
+		String[] paths = new String[images.length];
+		
+		for (int i = 0 ; i < images.length ; i ++){
+			paths[i] = images[i].getAbsolutePath();
+		}
+		
+		return paths;
+	}
+	
+	/*
+	 * Given an absolute image path returns its bitmap
+	 */
+	public Bitmap getBitmapFromFile(String path) throws FileNotFoundException, IOException{
+		return Media.getBitmap(getContentResolver(), Uri.fromFile(new File(path)));
 	}
 	
 	/*
@@ -325,8 +406,8 @@ public class MainActivity extends Activity implements LoggerInterface,
 		new GlobalLogger(this);
 
 		// Initialize OpenCV engine
-		ComputerVision cv = new ComputerVision(this, this, this);
-		cv.initializeService();
+		mCV = new ComputerVision(this, this, this);
+		mCV.initializeService();
 	}
 
 	@Override
