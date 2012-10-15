@@ -4,6 +4,7 @@ import java.io.File;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.Menu;
@@ -81,29 +82,33 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 	// Workspace home folder
 	private static final String mHomePath = "/mnt/sdcard/ApplianceReader/";
-	
+	// Logging tag
+	private static final String TAG = "HomographyAnalyzer";
+	// Reference image file name
+	private static final String REFERENCE_IMAGE_FILE_NAME = "reference.bmp";
+	// Input folder name (folder where the target images are stored)
+	private static final String TARGET_IMAGE_FOLDER_NAME = "input";
+
 	// Current workspace name
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
-	
+
 	// Ransac treshold value for homography transformation
 	private int mRansacTreshold;
-	
-	// Logging tag
-	private static final String TAG = "HomographyAnalyzer";
-	
+
 	// Intent request code
 	private final static int ACTION_TAKE_REFERENCE_IMAGE = 0;
 	private final static int ACTION_TAKE_TARGET_IMAGE = 1;
-	
+
 	// UI widgets
 	private final static int NUM_OF_BUTTONS = 4;
 	private Button[] mButtons = new Button[NUM_OF_BUTTONS];
-	private Button btnCompute, btnTakeReference, btnTakeTarget, btnBrowseWorkspace;
-	
+	private Button btnCompute, btnTakeReference, btnTakeTarget,
+			btnBrowseWorkspace;
+
 	private EditText txtWorkspaceName, txtRansacTreshold, txtLogging;
-	
-	public void initWidgets(){
+
+	public void initWidgets() {
 		mButtons[0] = btnCompute = (Button) findViewById(R.id.btnCompute);
 		mButtons[1] = btnTakeReference = (Button) findViewById(R.id.btnTakeReference);
 		mButtons[2] = btnTakeTarget = (Button) findViewById(R.id.btnTakeTarget);
@@ -111,84 +116,202 @@ public class MainActivity extends Activity implements LoggerInterface,
 		txtWorkspaceName = (EditText) findViewById(R.id.txtWorkspaceName);
 		txtRansacTreshold = (EditText) findViewById(R.id.txtRansacTreshold);
 		txtLogging = (EditText) findViewById(R.id.txtLogging);
-		
-		for(int i = 0 ; i < NUM_OF_BUTTONS ; i++){
+
+		for (int i = 0; i < NUM_OF_BUTTONS; i++) {
 			mButtons[i].setOnClickListener(this);
+			mButtons[i].setEnabled(false);
 		}
 	}
-	
+
 	// UI Button click handler
 	@Override
 	public void onClick(View v) {
 		// TODO Auto-generated method stub
-		//logd("Button clicked");
-		
-		if(txtWorkspaceName.getText().toString().equals("")){
+		// logd("Button clicked");
+
+		if (txtWorkspaceName.getText().toString().equals("")) {
 			loge("Enter workspace name first!");
 			return;
-		}
-		else{
+		} else {
 			mWorkspaceName = txtWorkspaceName.getText().toString();
-			if(!checkWorkspacePath()){
+			if (!checkWorkspacePath()) {
 				logd("Skipping things because no appropriate workspace folder!");
 			}
 		}
-		
-		if(v.getId() == btnTakeReference.getId()){
-			Intent cameraTaking = new Intent(this, ExternalApplication.class);
-			File output = new File(mHomePath + mWorkspaceName, "reference.bmp");
-			Bundle b = new Bundle();
-			b.putString(BaseImageTaker.IMAGE_PATH, output.getAbsolutePath()); 
-			cameraTaking.putExtras(b);
-			// Open up the camera application to take picture
-			startActivityForResult(cameraTaking, ACTION_TAKE_REFERENCE_IMAGE);
+
+		// Take Reference Image
+		if (v.getId() == btnTakeReference.getId()) {
+			takePicture(getReferenceImagePath(), ACTION_TAKE_REFERENCE_IMAGE);
 		}
 		
-	}
+		// Take Target Image
+		else if (v.getId() == btnTakeTarget.getId()) {
+			takePicture(getTargetImagePath(), ACTION_TAKE_TARGET_IMAGE);
+		}
+		
+		// Browse the workspace
+		else if (v.getId() == btnBrowseWorkspace.getId()) {
+			browsePath(getWorkspacePath());
+		}
+		
+		// Compute
+		else if (v.getId() == btnCompute.getId()) {
+			
+		}
 
+	}
 	
 	/*
-	 * Returns true if workspace path exist
-	 * Will create one if no such folder exists
+	 * Take a picture (eg. using external camera application)
+	 * 
+	 * path = the absolute path of where the file should be stored
 	 */
-	public boolean checkWorkspacePath(){
+	public void takePicture(String path, int action){
+		Intent cameraTaking = new Intent(this, ExternalApplication.class);
+		Bundle b = new Bundle();
+		b.putString(BaseImageTaker.IMAGE_PATH, path);
+		cameraTaking.putExtras(b);
+		// Open up the camera application to take picture
+		startActivityForResult(cameraTaking, action);
+	}
+
+	public void browsePath(String folder_path) {
+		Intent intent = new Intent(Intent.ACTION_VIEW, Uri.fromFile(new File(getWorkspacePath())));
+		intent.addCategory(Intent.CATEGORY_BROWSABLE);
+		//logd("folder_path = " + folder_path);
+		//intent.setData(Uri.fromFile(new File(folder_path)));
+		//intent.setType("file/*");
+		//intent.setDataAndType(Uri.fromFile(new File(folder_path)), "file/*");
+		startActivity(intent);
+	}
+	
+	/*
+	 * Returns true if workspace path exist Will create one if no such folder
+	 * exists
+	 */
+	public boolean checkWorkspacePath() {
 		// String path
 		String path = mHomePath;
 		// File points to path
 		File path_file;
-		
+
 		// Needs to have / at the end
-		if(mHomePath.charAt(mHomePath.length() - 1) != '/'){
+		if (mHomePath.charAt(mHomePath.length() - 1) != '/') {
 			path += "/";
 		}
 		path += mWorkspaceName;
-		
+
 		path_file = new File(path);
-		
-		if(!path_file.exists()){
+
+		if (!path_file.exists()) {
 			// Try to create the path if it doesn't exist
-			if(!path_file.mkdirs()){
+			if (!path_file.mkdirs()) {
 				loge("Error on creating the workspace folder!");
 				return false;
 			}
 		}
 		return true;
 	}
-	
+
 	/*
 	 * Get the complete workspace path
 	 */
-	public String getWorkspacePath(){
-		String out = mHomePath + mWorkspaceName;
-		if(out.charAt(out.length() - 1) != '/')
-			out += "/";
-		return out;
-	}
-	
-	public String getReferenceImagePath(){
+	public String getWorkspacePath() {
+		String path = mHomePath + mWorkspaceName;
+		File path_file = new File(path);
 		
+		if(!path_file.exists()){
+			if(!path_file.mkdirs()){
+				loge("Couldn't create workspace path!");
+				throw new RuntimeException("Couldn't create workspace path!");
+			}
+		}
+		
+		return path_file.getAbsolutePath();
 	}
 	
+	/*
+	 * Read out the UI textbox and return the parsed
+	 * ransac threshold value.
+	 * 
+	 * Returns an error if error happens.
+	 */
+	public double getRansacTreshold(){
+		return Double.parseDouble(txtRansacTreshold.getText().toString());
+	}
+	
+	/*
+	 * 
+	 * Get the complete path of the target image folder
+	 * 
+	 */
+	public String getTargetFolderPath() {
+		File input_path = new File(getWorkspacePath() + "/"
+				+ TARGET_IMAGE_FOLDER_NAME);
+
+		// Create the target folder if needed
+		if (!input_path.exists()) {
+			if (!input_path.mkdirs()) {
+				loge("Couldn't create a folder for target images!");
+				throw new RuntimeException(
+						"Couldn't create a folder for target images!");
+			}
+		}
+
+		return input_path.getAbsolutePath();
+
+	}
+
+	/*
+	 * Return the full path of the reference image
+	 */
+	public String getReferenceImagePath() {
+		String reference_folder_path = getWorkspacePath();
+		File ref_file = new File(reference_folder_path, REFERENCE_IMAGE_FILE_NAME);
+		
+		return ref_file.getAbsolutePath();
+	}
+
+	/*
+	 * Return the full path of the target image
+	 * 
+	 * Since we can have multiple target image, this function handles the naming
+	 * convention. (eg. create the new file with appropriate name for the next 
+	 * target image)
+	 * 
+	 * We're using this naming convention [NUMBER].bmp So if there are images
+	 * 1.bmp through 3.bmp already on the input folder, this function would
+	 * return a path for 4.bmp
+	 * 
+	 */
+	public String getTargetImagePath() {
+		String target_folder_path = getTargetFolderPath();
+		File target_folder_file = new File(target_folder_path);
+		File[] target_images_files = target_folder_file.listFiles();
+		
+		int largest = 0;
+		for (File target_image : target_images_files) {
+			String name = target_image.getName();
+			//logd("name= " + name);
+			// Remove file type
+			String name_wo_type = "";
+			for (int i = 0 ; i < name.length() ; i++) {
+				if(name.charAt(i) == '.')
+					break;
+				name_wo_type += name.charAt(i);
+			}
+			
+			// Note that this assumes the target files are numbered
+			int file_name_integer = Integer.parseInt(name_wo_type);
+			largest = Math.max(largest, file_name_integer);
+		}
+		//logd("getTargetImagePath(): largest= " + largest);
+		
+		File output_file = new File(target_folder_path, "" + ++largest + ".bmp");
+		
+		return output_file.getAbsolutePath();
+	}
+
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
@@ -196,21 +319,23 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		// Init UI
 		initWidgets();
-		
+
 		// This needs to be done first because many other objets
 		// dependent on this global logger
 		new GlobalLogger(this);
-		
+
 		// Initialize OpenCV engine
 		ComputerVision cv = new ComputerVision(this, this, this);
 		cv.initializeService();
 	}
-	
 
 	@Override
 	public void onInitServiceFinished() {
 		// TODO Auto-generated method stub
-		//logd("onInitServiceFinished()");
+		// logd("onInitServiceFinished()");
+		for (int i = 0; i < NUM_OF_BUTTONS; i++) {
+			mButtons[i].setEnabled(true);
+		}
 	}
 
 	@Override
@@ -219,24 +344,32 @@ public class MainActivity extends Activity implements LoggerInterface,
 		loge("onInitServiceFailed()");
 	}
 
-
 	// Called when a started intent returns
 	@Override
 	protected void onActivityResult(int requestCode, int resultCode, Intent data) {
 		super.onActivityResult(requestCode, resultCode, data);
 		switch (requestCode) {
 		case ACTION_TAKE_REFERENCE_IMAGE:
-			if(resultCode == RESULT_OK){
+			if (resultCode == RESULT_OK) {
 				String imagePath;
-				imagePath = data.getExtras().getString(BaseImageTaker.IMAGE_PATH);
+				imagePath = data.getExtras().getString(
+						BaseImageTaker.IMAGE_PATH);
 				logd("Reference image taken: " + imagePath);
+			} else {
+
 			}
-			else{
-				
-			}
-			
+
 			break;
 		case ACTION_TAKE_TARGET_IMAGE:
+			if (resultCode == RESULT_OK) {
+				String imagePath;
+				imagePath = data.getExtras().getString(
+						BaseImageTaker.IMAGE_PATH);
+				logd("Target image taken: " + imagePath);
+			} else {
+
+			}
+
 			break;
 		}
 	}
@@ -258,7 +391,6 @@ public class MainActivity extends Activity implements LoggerInterface,
 		Log.e(TAG, msg);
 		Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
 	}
-	
 
 	@Override
 	public void cvLogd(String msg) {
@@ -282,6 +414,5 @@ public class MainActivity extends Activity implements LoggerInterface,
 	public void cvLoge(String tag, String msg) {
 		loge(msg);
 	}
-
 
 }
