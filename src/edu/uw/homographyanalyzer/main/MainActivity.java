@@ -7,13 +7,12 @@ import java.io.IOException;
 import org.opencv.android.Utils;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfKeyPoint;
-import org.opencv.core.Point;
-import org.opencv.core.Size;
 import org.opencv.features2d.FeatureDetector;
 
 import android.app.Activity;
 import android.content.Intent;
 import android.graphics.Bitmap;
+import android.graphics.Bitmap.Config;
 import android.net.Uri;
 import android.os.Bundle;
 import android.provider.MediaStore.Images.Media;
@@ -100,7 +99,9 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private static final String REFERENCE_IMAGE_FILE_NAME = "reference.bmp";
 	// Input folder name (folder where the target images are stored)
 	private static final String TARGET_IMAGE_FOLDER_NAME = "input";
-
+	// Output folder name (folder where the generated images are stored)
+	private static final String OUTPUT_IMAGE_FOLDER_NAME = "output";
+	
 	// Current workspace name
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
@@ -108,8 +109,11 @@ public class MainActivity extends Activity implements LoggerInterface,
 	// Computer Vision library wrapper
 	private ComputerVision mCV;
 
-	// Ransac treshold value for homography transformation
+	// RANSAC threshold value for homography transformation
 	private int mRansacTreshold;
+	
+	// The kind of feature detector to be used
+	private final static int FEATURE_DETECTOR = FeatureDetector.ORB; 
 
 	// Intent request code
 	private final static int ACTION_TAKE_REFERENCE_IMAGE = 0;
@@ -172,14 +176,47 @@ public class MainActivity extends Activity implements LoggerInterface,
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
 			try {
+				// Mat of reference image
 				Mat reference = getReferenceMat();
+				// Get each of the target images
 				String[] target_files = getTargetImagePaths();
-				MatOfKeyPoint ref_kp = mCV.findKeyPoints(FeatureDetector.FAST, reference);
+				// Compute keypoint of the reference image
+				MatOfKeyPoint ref_kp = mCV.findKeyPoints(FEATURE_DETECTOR, reference);
 				logd("ref_kp=" + ref_kp.size());
+				
+				// For each target image
 				for(int i = 0 ; i < target_files.length ; i++){
+					// Get the target image matrix
 					Mat target = getMatFromFile(target_files[i]);
-					MatOfKeyPoint tgt_kp = mCV.findKeyPoints(FeatureDetector.FAST, target);
-					logd("tgt_kp=" +tgt_kp.size());
+					
+					// Compute the target image keypoints
+					MatOfKeyPoint targetKeypoints = mCV.findKeyPoints(FEATURE_DETECTOR, target);
+					
+					// Target mat with keypoints drawn on it
+					Mat target_with_keypoints = new Mat();
+					
+					logd("kp: " + targetKeypoints.size());
+					
+					// This won't work as drawKeypoints expects RGBA
+					//Features2d.drawKeypoints(target, targetKeypoints, target_with_keypoints);
+					Utility.drawKeypoints_RGBA(target, target_with_keypoints, targetKeypoints);
+					
+					
+					// Bitmap with keypoints
+					Bitmap target_with_keypoints_bmp = 
+							Bitmap.createBitmap(target_with_keypoints.width(),
+												target_with_keypoints.height(),
+												Config.ARGB_8888);
+					
+					Utils.matToBitmap(target_with_keypoints, target_with_keypoints_bmp);
+					
+					// The path to store the result
+					String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
+					
+					Utility.saveBitmapToFile(target_with_keypoints_bmp, 
+							target_keypoints_path);
+					logd("File created: " + target_keypoints_path);
+					
 				}
 				
 			} catch (FileNotFoundException e) {
@@ -233,6 +270,32 @@ public class MainActivity extends Activity implements LoggerInterface,
 		}
 		
 		return paths;
+	}
+	
+	/*
+	 * Given an input image, returns the path 
+	 * of where the input image with keypoints drawn on it
+	 * would be stored 
+	 */
+	public String getOutputImagePath_keypoint(String target_files){
+		File input = new File(target_files);
+		String input_name = input.getName();
+		int i;
+		for(i = input_name.length() - 1 ; i >= 0 ; i--){
+			if(input_name.charAt(i) == '.'){
+				break;
+			}
+		}
+		
+		if ( i == 0 ) {
+			throw new RuntimeException("Path doesn't have file extension: " + i);	
+		}
+		
+		File outputPath = new File(getOutputFolderPath(), 
+				input_name.substring(0, i) + "_keypoints.bmp");
+		
+		return outputPath.getAbsolutePath();  
+		
 	}
 	
 	/*
@@ -351,6 +414,19 @@ public class MainActivity extends Activity implements LoggerInterface,
 		File ref_file = new File(reference_folder_path, REFERENCE_IMAGE_FILE_NAME);
 		
 		return ref_file.getAbsolutePath();
+	}
+	
+	public String getOutputFolderPath() {
+		String workspace_path = getWorkspacePath();
+		
+		if(workspace_path.charAt(workspace_path.length() - 1) != '/'){
+			workspace_path += "/";
+		}
+		
+		File workspace_folder = new File(workspace_path + OUTPUT_IMAGE_FOLDER_NAME);
+		workspace_folder.mkdirs();
+		
+		return workspace_folder.getAbsolutePath(); 
 	}
 
 	/*
