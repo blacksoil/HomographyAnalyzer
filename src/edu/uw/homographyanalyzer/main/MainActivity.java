@@ -10,11 +10,14 @@ import org.opencv.core.MatOfKeyPoint;
 import org.opencv.features2d.FeatureDetector;
 
 import android.app.Activity;
+import android.app.ProgressDialog;
+import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Bitmap.Config;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.provider.MediaStore.Images.Media;
 import android.util.Log;
 import android.view.Menu;
@@ -124,7 +127,16 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private Button[] mButtons = new Button[NUM_OF_BUTTONS];
 	private Button btnCompute, btnTakeReference, btnTakeTarget,
 			btnBrowseWorkspace;
-
+	
+	// UI Thread handler
+	private Handler mHandler;
+	
+	// This class' context
+	private Context mContext;
+	
+	// Progress dialog to indicate that computation is running
+	private ProgressDialog mProgressDialog;
+	
 	private EditText txtWorkspaceName, txtRansacTreshold, txtLogging;
 
 	public void initWidgets() {
@@ -140,6 +152,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 			mButtons[i].setOnClickListener(this);
 			mButtons[i].setEnabled(false);
 		}
+		
 	}
 
 	// UI Button click handler
@@ -175,60 +188,86 @@ public class MainActivity extends Activity implements LoggerInterface,
 		
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
-			try {
-				// Mat of reference image
-				Mat reference = getReferenceMat();
-				// Get each of the target images
-				String[] target_files = getTargetImagePaths();
-				// Compute keypoint of the reference image
-				MatOfKeyPoint ref_kp = mCV.findKeyPoints(FEATURE_DETECTOR, reference);
-				logd("ref_kp=" + ref_kp.size());
-				
-				// For each target image
-				for(int i = 0 ; i < target_files.length ; i++){
-					// Get the target image matrix
-					Mat target = getMatFromFile(target_files[i]);
-					
-					// Compute the target image keypoints
-					MatOfKeyPoint targetKeypoints = mCV.findKeyPoints(FEATURE_DETECTOR, target);
-					
-					// Target mat with keypoints drawn on it
-					Mat target_with_keypoints = new Mat();
-					
-					logd("kp: " + targetKeypoints.size());
-					
-					// This won't work as drawKeypoints expects RGBA
-					//Features2d.drawKeypoints(target, targetKeypoints, target_with_keypoints);
-					Utility.drawKeypoints_RGBA(target, target_with_keypoints, targetKeypoints);
-					
-					
-					// Bitmap with keypoints
-					Bitmap target_with_keypoints_bmp = 
-							Bitmap.createBitmap(target_with_keypoints.width(),
-												target_with_keypoints.height(),
-												Config.ARGB_8888);
-					
-					Utils.matToBitmap(target_with_keypoints, target_with_keypoints_bmp);
-					
-					// The path to store the result
-					String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
-					
-					Utility.saveBitmapToFile(target_with_keypoints_bmp, 
-							target_keypoints_path);
-					logd("File created: " + target_keypoints_path);
-					
-				}
-				
-			} catch (FileNotFoundException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			} catch (IOException e) {
-				// TODO Auto-generated catch block
-				e.printStackTrace();
-			}
-			
+			compute();
 		}
 
+	}
+	
+	/*
+	 * Function that handles btnCompute() click event
+	 */
+	public void compute(){
+		mProgressDialog = ProgressDialog.show(this, "Computing", "Please wait", true, false);
+		Runnable computation = new Runnable(){
+			@Override
+			public void run() {
+				try {
+					// Mat of reference image
+					Mat reference = getReferenceMat();
+					// Get each of the target images
+					String[] target_files = getTargetImagePaths();
+					// Compute keypoint of the reference image
+					MatOfKeyPoint ref_kp = mCV.findKeyPoints(FEATURE_DETECTOR, reference);
+					logd("ref_kp=" + ref_kp.size());
+					
+					// For each target image
+					for(int i = 0 ; i < target_files.length ; i++){
+						// Get the target image matrix
+						Mat target = getMatFromFile(target_files[i]);
+						
+						// Compute the target image keypoints
+						MatOfKeyPoint targetKeypoints = mCV.findKeyPoints(FEATURE_DETECTOR, target);
+						
+						// Target mat with keypoints drawn on it
+						Mat target_with_keypoints = new Mat();
+						
+						logd("kp: " + targetKeypoints.size());
+						
+						// This won't work as drawKeypoints expects RGBA
+						//Features2d.drawKeypoints(target, targetKeypoints, target_with_keypoints);
+						
+						Utility.drawKeypoints_RGBA(target, target_with_keypoints, targetKeypoints);
+						
+						
+						// Bitmap with keypoints
+						Bitmap target_with_keypoints_bmp = 
+								Bitmap.createBitmap(target_with_keypoints.width(),
+													target_with_keypoints.height(),
+													Config.ARGB_8888);
+						
+						Utils.matToBitmap(target_with_keypoints, target_with_keypoints_bmp);
+						
+						// The path to store the result
+						String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
+						
+						Utility.saveBitmapToFile(target_with_keypoints_bmp, 
+								target_keypoints_path);
+						logd("File created: " + target_keypoints_path);
+					}
+					
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				
+				finally{
+					mHandler.post(new Runnable() {
+						@Override
+						public void run() {
+							mProgressDialog.dismiss();
+						}
+					});
+				}
+			}
+		};
+		
+		// Separate Thread to do the heavy computation
+		Thread computeThread = new Thread(computation);
+		computeThread.start();
+		
 	}
 	
 	/*
@@ -474,6 +513,16 @@ public class MainActivity extends Activity implements LoggerInterface,
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_homography);
 
+
+		/*
+		 * These needs to be done first before any call to logd
+		 * because logd is using handler
+		 */
+		// Initializes UI Thread handler
+		mHandler = new Handler();
+		// Activity's context
+		mContext = getApplicationContext();
+		
 		// Init UI
 		initWidgets();
 
@@ -484,8 +533,17 @@ public class MainActivity extends Activity implements LoggerInterface,
 		// Initialize OpenCV engine
 		mCV = new ComputerVision(this, this, this);
 		mCV.initializeService();
+
+		// Prevent user from doing anything before the CV engine is initialized
+		mProgressDialog = ProgressDialog.show(this, "OpenCV Engine", "Initializing", true, false);
+		
 	}
 
+	
+	/*
+	 * Invoked when OpenCV engine has finished its initialization
+	 * @see edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#onInitServiceFinished()
+	 */
 	@Override
 	public void onInitServiceFinished() {
 		// TODO Auto-generated method stub
@@ -493,8 +551,13 @@ public class MainActivity extends Activity implements LoggerInterface,
 		for (int i = 0; i < NUM_OF_BUTTONS; i++) {
 			mButtons[i].setEnabled(true);
 		}
+		mProgressDialog.dismiss();
 	}
 
+	/*
+	 * Invoked if OpenCV engine failed to initialize
+	 * @see edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#onInitServiceFailed()
+	 */
 	@Override
 	public void onInitServiceFailed() {
 		// TODO Auto-generated method stub
@@ -538,9 +601,15 @@ public class MainActivity extends Activity implements LoggerInterface,
 	}
 
 	@Override
-	public void logd(String msg) {
+	public void logd(final String msg) {
 		Log.d(TAG, msg);
-		Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+		mHandler.post(new Runnable() {
+			
+			@Override
+			public void run() {
+				Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show();		
+			}
+		});
 	}
 
 	@Override
