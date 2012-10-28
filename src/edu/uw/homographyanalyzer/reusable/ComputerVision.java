@@ -8,6 +8,7 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfKeyPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.FeatureDetector;
 import org.opencv.features2d.Features2d;
 import org.opencv.features2d.KeyPoint;
@@ -80,11 +81,20 @@ public class ComputerVision {
 	 * featureDetector can be obtained from the FeatureDetector class
 	 * (eg. FeatureDetector.FAST)
 	 */
-	public MatOfKeyPoint findKeyPoints(int featureDetector, Mat source){
-		MatOfKeyPoint result = new MatOfKeyPoint();	
+	public MatOfKeyPoint findKeyPoints(int featureDetector, Mat img){
+		//DescriptorExtractor dExtractor = DescriptorExtractor.create(DescriptorExtractor.ORB);
+		
+		MatOfKeyPoint keypoints = new MatOfKeyPoint();
+		//MatOfKeyPoint descriptors = new MatOfKeyPoint();
+		
+		//Mat descriptors = new Mat();
 		FeatureDetector fd = FeatureDetector.create(featureDetector);
-		fd.detect(source, result);
-		return result;
+		//DescriptorExtractor de = DescriptorExtractor.create(DescriptorExtractor.ORB);
+		
+		fd.detect(img, keypoints);
+		//de.compute(img, keypoints, descriptors);
+		
+		return keypoints;
 	}
 	
 	/*

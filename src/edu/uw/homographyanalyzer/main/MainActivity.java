@@ -6,6 +6,7 @@ import java.io.IOException;
 
 import org.opencv.android.Utils;
 import org.opencv.core.Mat;
+import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
 import org.opencv.features2d.FeatureDetector;
 
@@ -104,19 +105,19 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private static final String TARGET_IMAGE_FOLDER_NAME = "input";
 	// Output folder name (folder where the generated images are stored)
 	private static final String OUTPUT_IMAGE_FOLDER_NAME = "output";
-	
+
 	// Current workspace name
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
-	
+
 	// Computer Vision library wrapper
 	private ComputerVision mCV;
 
 	// RANSAC threshold value for homography transformation
 	private int mRansacTreshold;
-	
+
 	// The kind of feature detector to be used
-	private final static int FEATURE_DETECTOR = FeatureDetector.ORB; 
+	private final static int FEATURE_DETECTOR = FeatureDetector.ORB;
 
 	// Intent request code
 	private final static int ACTION_TAKE_REFERENCE_IMAGE = 0;
@@ -127,16 +128,16 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private Button[] mButtons = new Button[NUM_OF_BUTTONS];
 	private Button btnCompute, btnTakeReference, btnTakeTarget,
 			btnBrowseWorkspace;
-	
+
 	// UI Thread handler
 	private Handler mHandler;
-	
+
 	// This class' context
 	private Context mContext;
-	
+
 	// Progress dialog to indicate that computation is running
 	private ProgressDialog mProgressDialog;
-	
+
 	private EditText txtWorkspaceName, txtRansacTreshold, txtLogging;
 
 	public void initWidgets() {
@@ -152,7 +153,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 			mButtons[i].setOnClickListener(this);
 			mButtons[i].setEnabled(false);
 		}
-		
+
 	}
 
 	// UI Button click handler
@@ -175,76 +176,126 @@ public class MainActivity extends Activity implements LoggerInterface,
 		if (v.getId() == btnTakeReference.getId()) {
 			takePicture(getReferenceImagePath(), ACTION_TAKE_REFERENCE_IMAGE);
 		}
-		
+
 		// Take Target Image
 		else if (v.getId() == btnTakeTarget.getId()) {
 			takePicture(getTargetImagePath(), ACTION_TAKE_TARGET_IMAGE);
 		}
-		
+
 		// Browse the workspace
 		else if (v.getId() == btnBrowseWorkspace.getId()) {
 			browsePath(getWorkspacePath());
 		}
-		
+
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
 			compute();
 		}
 
 	}
-	
+
 	/*
 	 * Function that handles btnCompute() click event
 	 */
-	public void compute(){
-		mProgressDialog = ProgressDialog.show(this, "Computing", "Please wait", true, false);
-		Runnable computation = new Runnable(){
+	public void compute() {
+		mProgressDialog = ProgressDialog.show(this, "Computing", "Please wait",
+				true, false);
+		Runnable computation = new Runnable() {
+
 			@Override
 			public void run() {
 				try {
 					// Mat of reference image
-					Mat reference = getReferenceMat();
+					Mat reference_img = getReferenceMat();
+
+					// Compute keypoints of the reference image
+					MatOfKeyPoint ref_kp = mCV.findKeyPoints(FEATURE_DETECTOR,
+							reference_img);
+
+					// Compute the descriptor
+					Mat reference_descriptor = Utility.computeDescriptors(
+							reference_img, ref_kp);
+
 					// Get each of the target images
 					String[] target_files = getTargetImagePaths();
-					// Compute keypoint of the reference image
-					MatOfKeyPoint ref_kp = mCV.findKeyPoints(FEATURE_DETECTOR, reference);
-					logd("ref_kp=" + ref_kp.size());
-					
+
+					logd("Number of ref img keypoints=" + ref_kp.size().height
+							* ref_kp.size().width);
+
 					// For each target image
-					for(int i = 0 ; i < target_files.length ; i++){
+					for (int i = 0; i < target_files.length; i++) {
 						// Get the target image matrix
-						Mat target = getMatFromFile(target_files[i]);
-						
+						Mat target_img = getMatFromFile(target_files[i]);
+
 						// Compute the target image keypoints
-						MatOfKeyPoint targetKeypoints = mCV.findKeyPoints(FEATURE_DETECTOR, target);
-						
+						MatOfKeyPoint target_kp = mCV.findKeyPoints(
+								FEATURE_DETECTOR, target_img);
+						logd("Number of keypoints: " + target_kp.size().height
+								* target_kp.size().width);
+
+						// Compute the target's descriptor
+						Mat target_descriptor = Utility.computeDescriptors(
+								target_img, target_kp);
+
 						// Target mat with keypoints drawn on it
 						Mat target_with_keypoints = new Mat();
-						
-						logd("kp: " + targetKeypoints.size());
-						
+
+						// Mat of reference to target correspondences drawn on
+						// it
+						Mat correspondence_image = new Mat();
+
+						// Grab the matching keypoints of the target image
+						MatOfDMatch matches = Utility
+								.getMatchingCorrespondences(
+										reference_descriptor, target_descriptor);
+
+						// Inlier keypoints
+						// MatOfKeyPoint target_kp_filtered =
+						// Utility.getMatchingKeypointsFromDescriptors(matches,
+						// target_kp);
+						// logd("Number of inlier keypoints: " +
+						// target_kp_filtered.size().height *
+						// target_kp_filtered.size().width);
+
+						Utility.drawMatches(reference_img, ref_kp, target_img,
+								target_kp, matches, correspondence_image);
+
 						// This won't work as drawKeypoints expects RGBA
-						//Features2d.drawKeypoints(target, targetKeypoints, target_with_keypoints);
-						
-						Utility.drawKeypoints_RGBA(target, target_with_keypoints, targetKeypoints);
-						
-						
+						// Features2d.drawKeypoints(target, targetKeypoints,
+						// target_with_keypoints);
+
+						Utility.drawKeypoints_RGBA(target_img,
+								target_with_keypoints, target_kp);
+
 						// Bitmap with keypoints
-						Bitmap target_with_keypoints_bmp = 
-								Bitmap.createBitmap(target_with_keypoints.width(),
-													target_with_keypoints.height(),
-													Config.ARGB_8888);
+						Bitmap target_with_keypoints_bmp = Bitmap.createBitmap(
+								target_with_keypoints.width(),
+								target_with_keypoints.height(),
+								Config.ARGB_8888);
+
+						Bitmap correspondence_image_bmp = Bitmap
+								.createBitmap(correspondence_image.width(),
+										correspondence_image.height(),
+										Config.ARGB_8888);
+
+						Utils.matToBitmap(target_with_keypoints,
+								target_with_keypoints_bmp);
 						
-						Utils.matToBitmap(target_with_keypoints, target_with_keypoints_bmp);
-						
+						Utils.matToBitmap(correspondence_image,
+								correspondence_image_bmp);
+
 						// The path to store the result
 						String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
+						String target_correspondence_path = getOutputImagePath_correspondence(target_files[i]);
 						
-						Utility.saveBitmapToFile(target_with_keypoints_bmp, 
+						Utility.saveBitmapToFile(target_with_keypoints_bmp,
 								target_keypoints_path);
+						Utility.saveBitmapToFile(correspondence_image_bmp,
+								target_correspondence_path);
+						
 						logd("File created: " + target_keypoints_path);
 					}
-					
+
 				} catch (FileNotFoundException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
@@ -252,8 +303,8 @@ public class MainActivity extends Activity implements LoggerInterface,
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
-				
-				finally{
+
+				finally {
 					mHandler.post(new Runnable() {
 						@Override
 						public void run() {
@@ -263,93 +314,121 @@ public class MainActivity extends Activity implements LoggerInterface,
 				}
 			}
 		};
-		
+
 		// Separate Thread to do the heavy computation
 		Thread computeThread = new Thread(computation);
 		computeThread.start();
-		
+
 	}
-	
+
 	/*
 	 * Get reference Mat
 	 */
-	public Mat getReferenceMat() throws FileNotFoundException, IOException{
+	public Mat getReferenceMat() throws FileNotFoundException, IOException {
 		return getMatFromFile(getReferenceImagePath());
 	}
-	
+
 	/*
-	 * Given a file path of a bitmap file
-	 * returns a Mat representation of it
+	 * Given a file path of a bitmap file returns a Mat representation of it
 	 */
-	public Mat getMatFromFile(String path) throws FileNotFoundException, IOException{
+	public Mat getMatFromFile(String path) throws FileNotFoundException,
+			IOException {
 		Bitmap bmp = getBitmapFromFile(path);
 		Mat mat = new Mat();
 		Utils.bitmapToMat(bmp, mat);
-		
+
 		return mat;
 	}
-	
+
 	/*
 	 * Get the bitmap of reference image
 	 */
-	public Bitmap getReferenceBitmap() throws FileNotFoundException, IOException {
+	public Bitmap getReferenceBitmap() throws FileNotFoundException,
+			IOException {
 		return getBitmapFromFile(getReferenceImagePath());
 	}
-	
+
 	/*
 	 * Return the absolute path for each of the target images
 	 */
-	public String[] getTargetImagePaths(){
+	public String[] getTargetImagePaths() {
 		File target_image_path = new File(getTargetFolderPath());
 		File[] images = target_image_path.listFiles();
 		String[] paths = new String[images.length];
-		
-		for (int i = 0 ; i < images.length ; i ++){
+
+		for (int i = 0; i < images.length; i++) {
 			paths[i] = images[i].getAbsolutePath();
 		}
-		
+
 		return paths;
 	}
-	
+
 	/*
-	 * Given an input image, returns the path 
-	 * of where the input image with keypoints drawn on it
-	 * would be stored 
+	 * Given an input image, returns the path of where the input image with
+	 * keypoints drawn on it would be stored
 	 */
-	public String getOutputImagePath_keypoint(String target_files){
+	public String getOutputImagePath_keypoint(String target_files) {
 		File input = new File(target_files);
 		String input_name = input.getName();
 		int i;
-		for(i = input_name.length() - 1 ; i >= 0 ; i--){
-			if(input_name.charAt(i) == '.'){
+		for (i = input_name.length() - 1; i >= 0; i--) {
+			if (input_name.charAt(i) == '.') {
 				break;
 			}
 		}
-		
-		if ( i == 0 ) {
-			throw new RuntimeException("Path doesn't have file extension: " + i);	
+
+		if (i == 0) {
+			throw new RuntimeException("Path doesn't have file extension: " + i);
 		}
-		
-		File outputPath = new File(getOutputFolderPath(), 
-				input_name.substring(0, i) + "_keypoints.bmp");
-		
-		return outputPath.getAbsolutePath();  
-		
+
+		File outputPath = new File(getOutputFolderPath(), input_name.substring(
+				0, i) + "_keypoints.bmp");
+
+		return outputPath.getAbsolutePath();
+
 	}
-	
+
+	/*
+	 * Given an input image, returns the path of where the correspondence image
+	 * (an image where features between reference and the image is drawn on it)
+	 * would be stored
+	 */
+	public String getOutputImagePath_correspondence(String target_files) {
+		File input = new File(target_files);
+		String input_name = input.getName();
+		int i;
+		for (i = input_name.length() - 1; i >= 0; i--) {
+			if (input_name.charAt(i) == '.') {
+				break;
+			}
+		}
+
+		if (i == 0) {
+			throw new RuntimeException("Path doesn't have file extension: " + i);
+		}
+
+		File outputPath = new File(getOutputFolderPath(), input_name.substring(
+				0, i) + "_correspondence.bmp");
+
+		return outputPath.getAbsolutePath();
+
+	}
+
 	/*
 	 * Given an absolute image path returns its bitmap
 	 */
-	public Bitmap getBitmapFromFile(String path) throws FileNotFoundException, IOException{
-		return Media.getBitmap(getContentResolver(), Uri.fromFile(new File(path)));
+	public Bitmap getBitmapFromFile(String path) throws FileNotFoundException,
+			IOException {
+		return Media.getBitmap(getContentResolver(),
+				Uri.fromFile(new File(path)));
 	}
-	
+
 	/*
 	 * Take a picture (eg. using external camera application)
 	 * 
 	 * path = the absolute path of where the file should be stored
 	 */
-	public void takePicture(String path, int action){
+	public void takePicture(String path, int action) {
 		Intent cameraTaking = new Intent(this, ExternalApplication.class);
 		Bundle b = new Bundle();
 		b.putString(BaseImageTaker.IMAGE_PATH, path);
@@ -359,15 +438,16 @@ public class MainActivity extends Activity implements LoggerInterface,
 	}
 
 	public void browsePath(String folder_path) {
-		Intent intent = new Intent(Intent.ACTION_VIEW, Uri.fromFile(new File(getWorkspacePath())));
+		Intent intent = new Intent(Intent.ACTION_VIEW, Uri.fromFile(new File(
+				getWorkspacePath())));
 		intent.addCategory(Intent.CATEGORY_BROWSABLE);
-		//logd("folder_path = " + folder_path);
-		//intent.setData(Uri.fromFile(new File(folder_path)));
-		//intent.setType("file/*");
-		//intent.setDataAndType(Uri.fromFile(new File(folder_path)), "file/*");
+		// logd("folder_path = " + folder_path);
+		// intent.setData(Uri.fromFile(new File(folder_path)));
+		// intent.setType("file/*");
+		// intent.setDataAndType(Uri.fromFile(new File(folder_path)), "file/*");
 		startActivity(intent);
 	}
-	
+
 	/*
 	 * Returns true if workspace path exist Will create one if no such folder
 	 * exists
@@ -402,31 +482,29 @@ public class MainActivity extends Activity implements LoggerInterface,
 	public String getWorkspacePath() {
 		String path = mHomePath + mWorkspaceName;
 		File path_file = new File(path);
-		
-		if(!path_file.exists()){
-			if(!path_file.mkdirs()){
+
+		if (!path_file.exists()) {
+			if (!path_file.mkdirs()) {
 				loge("Couldn't create workspace path!");
 				throw new RuntimeException("Couldn't create workspace path!");
 			}
 		}
-		
+
 		return path_file.getAbsolutePath();
 	}
-	
+
 	/*
-	 * Read out the UI textbox and return the parsed
-	 * ransac threshold value.
+	 * Read out the UI textbox and return the parsed ransac threshold value.
 	 * 
 	 * Returns an error if error happens.
 	 */
-	public double getRansacTreshold(){
+	public double getRansacTreshold() {
 		return Double.parseDouble(txtRansacTreshold.getText().toString());
 	}
-	
+
 	/*
 	 * 
 	 * Get the complete path of the target image folder
-	 * 
 	 */
 	public String getTargetFolderPath() {
 		File input_path = new File(getWorkspacePath() + "/"
@@ -450,61 +528,62 @@ public class MainActivity extends Activity implements LoggerInterface,
 	 */
 	public String getReferenceImagePath() {
 		String reference_folder_path = getWorkspacePath();
-		File ref_file = new File(reference_folder_path, REFERENCE_IMAGE_FILE_NAME);
-		
+		File ref_file = new File(reference_folder_path,
+				REFERENCE_IMAGE_FILE_NAME);
+
 		return ref_file.getAbsolutePath();
 	}
-	
+
 	public String getOutputFolderPath() {
 		String workspace_path = getWorkspacePath();
-		
-		if(workspace_path.charAt(workspace_path.length() - 1) != '/'){
+
+		if (workspace_path.charAt(workspace_path.length() - 1) != '/') {
 			workspace_path += "/";
 		}
-		
-		File workspace_folder = new File(workspace_path + OUTPUT_IMAGE_FOLDER_NAME);
+
+		File workspace_folder = new File(workspace_path
+				+ OUTPUT_IMAGE_FOLDER_NAME);
 		workspace_folder.mkdirs();
-		
-		return workspace_folder.getAbsolutePath(); 
+
+		return workspace_folder.getAbsolutePath();
 	}
 
 	/*
 	 * Return the full path of the target image
 	 * 
 	 * Since we can have multiple target image, this function handles the naming
-	 * convention. (eg. create the new file with appropriate name for the next 
+	 * convention. (eg. create the new file with appropriate name for the next
 	 * target image)
 	 * 
 	 * We're using this naming convention [NUMBER].bmp So if there are images
 	 * 1.bmp through 3.bmp already on the input folder, this function would
 	 * return a path for 4.bmp
-	 * 
 	 */
 	public String getTargetImagePath() {
 		String target_folder_path = getTargetFolderPath();
 		File target_folder_file = new File(target_folder_path);
 		File[] target_images_files = target_folder_file.listFiles();
-		
+
 		int largest = 0;
 		for (File target_image : target_images_files) {
 			String name = target_image.getName();
-			//logd("name= " + name);
+			// logd("name= " + name);
 			// Remove file type
 			String name_wo_type = "";
-			for (int i = 0 ; i < name.length() ; i++) {
-				if(name.charAt(i) == '.')
+			for (int i = 0; i < name.length(); i++) {
+				if (name.charAt(i) == '.')
 					break;
 				name_wo_type += name.charAt(i);
 			}
-			
+
 			// Note that this assumes the target files are numbered
 			int file_name_integer = Integer.parseInt(name_wo_type);
 			largest = Math.max(largest, file_name_integer);
 		}
-		//logd("getTargetImagePath(): largest= " + largest);
-		
+		// logd("getTargetImagePath(): largest= " + largest);
+
 		File output_file = new File(target_folder_path, "" + ++largest + ".bmp");
-		
+
 		return output_file.getAbsolutePath();
 	}
 
@@ -513,16 +592,15 @@ public class MainActivity extends Activity implements LoggerInterface,
 		super.onCreate(savedInstanceState);
 		setContentView(R.layout.activity_homography);
 
-
 		/*
-		 * These needs to be done first before any call to logd
-		 * because logd is using handler
+		 * These needs to be done first before any call to logd because logd is
+		 * using handler
 		 */
 		// Initializes UI Thread handler
 		mHandler = new Handler();
 		// Activity's context
 		mContext = getApplicationContext();
-		
+
 		// Init UI
 		initWidgets();
 
@@ -535,14 +613,16 @@ public class MainActivity extends Activity implements LoggerInterface,
 		mCV.initializeService();
 
 		// Prevent user from doing anything before the CV engine is initialized
-		mProgressDialog = ProgressDialog.show(this, "OpenCV Engine", "Initializing", true, false);
-		
+		mProgressDialog = ProgressDialog.show(this, "OpenCV Engine",
+				"Initializing", true, false);
+
 	}
 
-	
 	/*
 	 * Invoked when OpenCV engine has finished its initialization
-	 * @see edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#onInitServiceFinished()
+	 * 
+	 * @see edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#
+	 * onInitServiceFinished()
 	 */
 	@Override
 	public void onInitServiceFinished() {
@@ -556,7 +636,10 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 	/*
 	 * Invoked if OpenCV engine failed to initialize
-	 * @see edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#onInitServiceFailed()
+	 * 
+	 * @see
+	 * edu.uw.homographyanalyzer.reusable.ComputerVisionCallback#onInitServiceFailed
+	 * ()
 	 */
 	@Override
 	public void onInitServiceFailed() {
@@ -604,10 +687,10 @@ public class MainActivity extends Activity implements LoggerInterface,
 	public void logd(final String msg) {
 		Log.d(TAG, msg);
 		mHandler.post(new Runnable() {
-			
+
 			@Override
 			public void run() {
-				Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show();		
+				Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show();
 			}
 		});
 	}
