@@ -5,10 +5,15 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 
 import org.opencv.android.Utils;
+import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Size;
+import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.FeatureDetector;
+import org.opencv.imgproc.Imgproc;
 
 import android.app.Activity;
 import android.app.ProgressDialog;
@@ -114,10 +119,11 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private ComputerVision mCV;
 
 	// RANSAC threshold value for homography transformation
-	private int mRansacTreshold;
+	private int mRansacTreshold = 3;
 
 	// The kind of feature detector to be used
 	private final static int FEATURE_DETECTOR = FeatureDetector.ORB;
+	private final static int DESCRIPTOR_EXTRACTOR = DescriptorExtractor.ORB;
 
 	// Intent request code
 	private final static int ACTION_TAKE_REFERENCE_IMAGE = 0;
@@ -214,7 +220,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 					// Compute the descriptor
 					Mat reference_descriptor = Utility.computeDescriptors(
-							reference_img, ref_kp);
+							reference_img, ref_kp, DESCRIPTOR_EXTRACTOR);
 
 					// Get each of the target images
 					String[] target_files = getTargetImagePaths();
@@ -235,7 +241,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 						// Compute the target's descriptor
 						Mat target_descriptor = Utility.computeDescriptors(
-								target_img, target_kp);
+								target_img, target_kp, DESCRIPTOR_EXTRACTOR);
 
 						// Target mat with keypoints drawn on it
 						Mat target_with_keypoints = new Mat();
@@ -245,9 +251,9 @@ public class MainActivity extends Activity implements LoggerInterface,
 						Mat correspondence_image = new Mat();
 
 						// Grab the matching keypoints of the target image
-						MatOfDMatch matches = Utility
+						MatOfDMatch descriptors = Utility
 								.getMatchingCorrespondences(
-										reference_descriptor, target_descriptor);
+										target_descriptor,reference_descriptor);
 
 						// Inlier keypoints
 						// MatOfKeyPoint target_kp_filtered =
@@ -258,15 +264,33 @@ public class MainActivity extends Activity implements LoggerInterface,
 						// target_kp_filtered.size().width);
 
 						Utility.drawMatches(reference_img, ref_kp, target_img,
-								target_kp, matches, correspondence_image);
-
-						// This won't work as drawKeypoints expects RGBA
-						// Features2d.drawKeypoints(target, targetKeypoints,
-						// target_with_keypoints);
+								target_kp, descriptors,
+								correspondence_image);
 
 						Utility.drawKeypoints_RGBA(target_img,
 								target_with_keypoints, target_kp);
 
+						MatOfPoint2f pts[] = Utility.getCorrespondences(
+								descriptors, ref_kp, target_kp);
+
+						// Compute the homography matrix
+						Mat H = Calib3d.findHomography(pts[1], pts[0],
+								Calib3d.RANSAC, mRansacTreshold);
+						
+
+						Mat target_warped_img = new Mat();
+						Imgproc.warpPerspective(
+								target_img,
+								target_warped_img,
+								H,
+								new Size(reference_img.width(), reference_img
+										.height()));
+
+						Bitmap target_warped_bmp = Bitmap.createBitmap(
+								reference_img.width(),
+								reference_img.height(),
+								Config.ARGB_8888);
+						
 						// Bitmap with keypoints
 						Bitmap target_with_keypoints_bmp = Bitmap.createBitmap(
 								target_with_keypoints.width(),
@@ -280,18 +304,23 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 						Utils.matToBitmap(target_with_keypoints,
 								target_with_keypoints_bmp);
-						
+
 						Utils.matToBitmap(correspondence_image,
 								correspondence_image_bmp);
+						
+						Utils.matToBitmap(target_warped_img,target_warped_bmp);
 
 						// The path to store the result
 						String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
 						String target_correspondence_path = getOutputImagePath_correspondence(target_files[i]);
+						String target_warped_path = getOutputImagePath_warped(target_files[i]);
 						
 						Utility.saveBitmapToFile(target_with_keypoints_bmp,
 								target_keypoints_path);
 						Utility.saveBitmapToFile(correspondence_image_bmp,
 								target_correspondence_path);
+						Utility.saveBitmapToFile(target_warped_bmp,
+								target_warped_path);
 						
 						logd("File created: " + target_keypoints_path);
 					}
@@ -413,6 +442,32 @@ public class MainActivity extends Activity implements LoggerInterface,
 		return outputPath.getAbsolutePath();
 
 	}
+	
+	/*
+	 * Given an input image, returns the path of where the warped image
+	 * would be stored
+	 */
+	public String getOutputImagePath_warped(String target_files) {
+		File input = new File(target_files);
+		String input_name = input.getName();
+		int i;
+		for (i = input_name.length() - 1; i >= 0; i--) {
+			if (input_name.charAt(i) == '.') {
+				break;
+			}
+		}
+
+		if (i == 0) {
+			throw new RuntimeException("Path doesn't have file extension: " + i);
+		}
+
+		File outputPath = new File(getOutputFolderPath(), input_name.substring(
+				0, i) + "_warped.bmp");
+
+		return outputPath.getAbsolutePath();
+
+	}
+
 
 	/*
 	 * Given an absolute image path returns its bitmap

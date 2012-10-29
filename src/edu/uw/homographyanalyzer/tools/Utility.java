@@ -8,6 +8,8 @@ import org.opencv.android.Utils;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
+import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Point;
 import org.opencv.features2d.DMatch;
 import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.DescriptorMatcher;
@@ -62,75 +64,102 @@ public class Utility {
 	/*
 	 * Given the keypoints, compute the feature descriptors
 	 */
-	public static Mat computeDescriptors(Mat img,
-			MatOfKeyPoint kp) {
+	public static Mat computeDescriptors(Mat img, MatOfKeyPoint kp,
+			int descriptorExtractor_type) {
 		Mat desc = new Mat();
 		// Feature extractor
 		DescriptorExtractor de = DescriptorExtractor
-				.create(DescriptorExtractor.ORB);
-		
+				.create(descriptorExtractor_type);
+
 		de.compute(img, kp, desc);
-		
+
 		return desc;
 	}
 
 	/*
 	 * Given two descriptors, compute the matches
 	 */
-	public static MatOfDMatch getMatchingCorrespondences(
-			Mat queryDescriptors, Mat trainDescriptors
-			){
+	public static MatOfDMatch getMatchingCorrespondences(Mat queryDescriptors,
+			Mat trainDescriptors) {
 		// Holds the result
 		MatOfDMatch matches = new MatOfDMatch();
 		// Flann-based descriptor
-		DescriptorMatcher dm = DescriptorMatcher.create(DescriptorMatcher.BRUTEFORCE_SL2);
-		//Compute matches
+		DescriptorMatcher dm = DescriptorMatcher
+				.create(DescriptorMatcher.BRUTEFORCE_SL2);
+		// Compute matches
 		dm.match(queryDescriptors, trainDescriptors, matches);
-		
+
 		return matches;
 	}
-	
-	public static void drawMatches(
-			Mat img1, MatOfKeyPoint keypoints1, 
-			Mat img2, MatOfKeyPoint keypoints2,
-			MatOfDMatch matches1to2, Mat outImg){
-		Mat img1_rgb = new Mat();
-		Mat img2_rgb = new Mat();
-		
-		Imgproc.cvtColor(img1, img1_rgb, Imgproc.COLOR_RGBA2RGB);
-		Imgproc.cvtColor(img2, img2_rgb, Imgproc.COLOR_RGBA2RGB);
-		
-		Features2d.drawMatches(img1_rgb, keypoints1, img2_rgb, keypoints2, matches1to2, outImg);
-	}
-	
-	
-	
+
 	/*
-	 *  Given a feature descriptor and the whole set of
-	 *  target image's keypoints, return matching keypoints.
+	 * Given a feature descriptor, a MatOfDmatch, which describes the reference
+	 * and target image and also MatOfKeyPoint for the reference and the target
+	 * image, this method returns MatOfPoints2f for the reference and target
+	 * image to be used for homography computation
 	 * 
+	 * Return: [0] = reference
+	 *         [1] = target
 	 */
-	/*
-	public static MatOfKeyPoint getMatchingKeypointsFromDescriptors(
-			MatOfDMatch descriptor_matches,
-			MatOfKeyPoint tgt_kp){
-		
-		// Convert descriptor to array
-		DMatch[] desc_matches = descriptor_matches.toArray();
-		
+	public static MatOfPoint2f[] getCorrespondences(MatOfDMatch descriptors,
+			MatOfKeyPoint ref_kp, MatOfKeyPoint tgt_kp) {
+
+		// The source of computation
+		DMatch[] descriptors_array = descriptors.toArray();
+		KeyPoint[] ref_kp_array = ref_kp.toArray();
 		KeyPoint[] tgt_kp_array = tgt_kp.toArray();
-		KeyPoint[] result_array = new KeyPoint[desc_matches.length];
-		
-		//TODO: Incorportate distance between features
-		for(int i = 0 ; i < desc_matches.length ; i++){
-			DMatch match = desc_matches[i];
-			match.distance
-			result_array[i] = tgt_kp_array[match.queryIdx];
+
+		// The result
+		Point[] ref_pts_array = new Point[descriptors_array.length];
+		Point[] tgt_pts_array = new Point[descriptors_array.length];
+
+		for (int i = 0; i < descriptors_array.length; i++) {
+			ref_pts_array[i] = ref_kp_array[descriptors_array[i].trainIdx].pt;
+			tgt_pts_array[i] = tgt_kp_array[descriptors_array[i].queryIdx].pt;
 		}
 		
-		MatOfKeyPoint result = new MatOfKeyPoint(result_array);
+		MatOfPoint2f ref_pts = new MatOfPoint2f(ref_pts_array);
+		MatOfPoint2f tgt_pts = new MatOfPoint2f(tgt_pts_array);
 		
-		return result;
+		MatOfPoint2f[] results = new MatOfPoint2f[2];
+		results[0] = ref_pts;
+		results[1] = tgt_pts;
+		return results;
 	}
-	 */	
+
+	public static void drawMatches(Mat img1, MatOfKeyPoint keypoints1,
+			Mat img2, MatOfKeyPoint keypoints2, MatOfDMatch matches1to2,
+			Mat outImg) {
+		Mat img1_rgb = new Mat();
+		Mat img2_rgb = new Mat();
+
+		Imgproc.cvtColor(img1, img1_rgb, Imgproc.COLOR_RGBA2RGB);
+		Imgproc.cvtColor(img2, img2_rgb, Imgproc.COLOR_RGBA2RGB);
+
+		Features2d.drawMatches(img1_rgb, keypoints1, img2_rgb, keypoints2,
+				matches1to2, outImg);
+	}
+
+	/*
+	 * Given a feature descriptor and the whole set of target image's keypoints,
+	 * return matching keypoints.
+	 */
+	/*
+	 * public static MatOfKeyPoint getMatchingKeypointsFromDescriptors(
+	 * MatOfDMatch descriptor_matches, MatOfKeyPoint tgt_kp){
+	 * 
+	 * // Convert descriptor to array DMatch[] desc_matches =
+	 * descriptor_matches.toArray();
+	 * 
+	 * KeyPoint[] tgt_kp_array = tgt_kp.toArray(); KeyPoint[] result_array = new
+	 * KeyPoint[desc_matches.length];
+	 * 
+	 * //TODO: Incorportate distance between features for(int i = 0 ; i <
+	 * desc_matches.length ; i++){ DMatch match = desc_matches[i];
+	 * match.distance result_array[i] = tgt_kp_array[match.queryIdx]; }
+	 * 
+	 * MatOfKeyPoint result = new MatOfKeyPoint(result_array);
+	 * 
+	 * return result; }
+	 */
 }
