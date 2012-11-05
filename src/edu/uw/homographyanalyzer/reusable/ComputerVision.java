@@ -1,14 +1,16 @@
 package edu.uw.homographyanalyzer.reusable;
 
+import java.util.List;
+
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.calib3d.Calib3d;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
 import org.opencv.core.MatOfPoint2f;
 import org.opencv.core.Point;
+import org.opencv.core.Rect;
 import org.opencv.features2d.DMatch;
 import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.DescriptorMatcher;
@@ -239,12 +241,54 @@ public class ComputerVision {
 			Mat outImg) {
 		Mat img1_rgb = new Mat();
 		Mat img2_rgb = new Mat();
-
+		
 		Imgproc.cvtColor(img1, img1_rgb, Imgproc.COLOR_RGBA2RGB);
 		Imgproc.cvtColor(img2, img2_rgb, Imgproc.COLOR_RGBA2RGB);
 
 		Features2d.drawMatches(img1_rgb, keypoints1, img2_rgb, keypoints2,
 				matches1to2, outImg);
+	}
+	
+	// This functions returns sub-images from the source image.
+	// Sub-image is defined by ROI as follow:
+	// The return Mat[i] would be ROI of the source_image defined by ROI.get(i)
+	// Each Point in the ROI.get(i) is the polygon coordinates describing
+	// the area of interest.
+	//
+	// Note that however many polygons are there would be rounded 
+	public Mat[] cropImage(Mat source_image, List<List<Point>> ROI){
+		Mat[] results = new Mat[ROI.size()];
+		
+		for(int i = 0 ; i < ROI.size() ; i++){
+			List<Point> coordinates = ROI.get(i);
+			/*
+			 * a  _____  b
+			 *   |     |
+			 * c |_____| d
+			 */
+			
+			boolean firstTime = true;
+			int xMin = 0, xMax = 0, yMin = 0, yMax = 0;
+			
+			// Approximate the polygon as a rectangle
+			for(Point p : coordinates){
+				if(firstTime){
+					firstTime = false;
+					xMin = xMax = (int) p.x;
+					yMin = yMax = (int) p.y;
+				}
+				else{
+					xMin = Math.min(xMin, (int) p.x);
+					yMin = Math.min(yMin, (int) p.y);
+					xMax = Math.max(xMax, (int) p.x);
+					yMax = Math.max(yMax, (int) p.y);
+				}
+			}
+			
+			results[i] = new Mat(source_image, new Rect(xMin, yMin, xMax - xMin, yMax - yMin));
+		}
+		
+		return results;
 	}
 	
 	// Logging function that propagates to the callback

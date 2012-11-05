@@ -3,6 +3,8 @@ package edu.uw.homographyanalyzer.main;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.util.LinkedList;
+import java.util.List;
 
 import org.opencv.android.Utils;
 import org.opencv.calib3d.Calib3d;
@@ -10,10 +12,12 @@ import org.opencv.core.Mat;
 import org.opencv.core.MatOfDMatch;
 import org.opencv.core.MatOfKeyPoint;
 import org.opencv.core.MatOfPoint2f;
+import org.opencv.core.Point;
 import org.opencv.core.Size;
 import org.opencv.features2d.DescriptorExtractor;
 import org.opencv.features2d.FeatureDetector;
 import org.opencv.imgproc.Imgproc;
+import org.xmlpull.v1.XmlPullParserException;
 
 import android.app.Activity;
 import android.app.ProgressDialog;
@@ -39,6 +43,7 @@ import edu.uw.homographyanalyzer.camera.BaseImageTaker;
 import edu.uw.homographyanalyzer.camera.ExternalApplication;
 import edu.uw.homographyanalyzer.global.GlobalLogger;
 import edu.uw.homographyanalyzer.global.LoggerInterface;
+import edu.uw.homographyanalyzer.parser.XMLTestImageSet;
 import edu.uw.homographyanalyzer.reusable.ComputerVision;
 import edu.uw.homographyanalyzer.reusable.ComputerVisionCallback;
 import edu.uw.homographyanalyzer.tools.Utility;
@@ -110,7 +115,9 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private static final String TARGET_IMAGE_FOLDER_NAME = "input";
 	// Output folder name (folder where the generated images are stored)
 	private static final String OUTPUT_IMAGE_FOLDER_NAME = "output";
-
+	// Polygon output folder name
+	private static final String OUTPUT_POLYGON_IMAGE_FOLDER_NAME = "output_polygon";
+	
 	// Current workspace name
 	// Full workspace path would be mHomePath + mWorkspaceName
 	private String mWorkspaceName;
@@ -154,7 +161,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 		txtWorkspaceName = (EditText) findViewById(R.id.txtWorkspaceName);
 		txtRansacTreshold = (EditText) findViewById(R.id.txtRansacTreshold);
 		txtLogging = (EditText) findViewById(R.id.txtLogging);
-		
+
 		for (int i = 0; i < NUM_OF_BUTTONS; i++) {
 			mButtons[i].setOnClickListener(this);
 			mButtons[i].setEnabled(false);
@@ -194,12 +201,12 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
-			try{
+			try {
 				// Parses ransac threshold
-				mRansacTreshold = Double.parseDouble(txtRansacTreshold.getText().toString());
+				mRansacTreshold = Double.parseDouble(txtRansacTreshold
+						.getText().toString());
 				compute();
-			}
-			catch(NumberFormatException e){
+			} catch (NumberFormatException e) {
 				loge("Invalid ransac threshold value!");
 			}
 		}
@@ -256,6 +263,9 @@ public class MainActivity extends Activity implements LoggerInterface,
 								.getMatchingCorrespondences(target_descriptor,
 										reference_descriptor);
 
+						// Target image after the transformation is applied
+						Mat warped_target;
+
 						// Inlier keypoints
 						// MatOfKeyPoint target_kp_filtered =
 						// Utility.getMatchingKeypointsFromDescriptors(matches,
@@ -274,24 +284,32 @@ public class MainActivity extends Activity implements LoggerInterface,
 						generateKeypointsOutput(target_img, target_kp,
 								target_keypoints_path);
 
-						// Generate an image where the correspondence between
-						// the
-						// reference and the target image is drawn
-						generateCorrespondenceOutput(reference_img, ref_kp,
-								target_img, target_kp, descriptors,
-								target_correspondence_path);
-
-						// Like above but just inlier
-						generateInlierCorrespondenceOutput(reference_img, ref_kp,
-								target_img, target_kp, descriptors,
-								target_inlier_correspondence_path);
+						
+						boolean DEBUG = false;
+						
+						if(DEBUG){
+							// Generate an image where the correspondence between
+							// the
+							// reference and the target image is drawn
+							generateCorrespondenceOutput(reference_img, ref_kp,
+									target_img, target_kp, descriptors,
+									target_correspondence_path);
+	
+							// Like above but just inlier
+							generateInlierCorrespondenceOutput(reference_img,
+									ref_kp, target_img, target_kp, descriptors,
+									target_inlier_correspondence_path);
+						}
 						
 						// Do the homography computation, warping, and finally
 						// generate the output image
-						generateHomographyWarpedImage(reference_img,
-								target_img, ref_kp, target_kp, descriptors,
-								target_warped_path);
-
+						warped_target = generateHomographyWarpedImage(
+								reference_img, target_img, ref_kp, target_kp,
+								descriptors, target_warped_path);
+						
+						// Cropped the annotated region from the target image
+						generateCroppedAnnotation(warped_target, target_files[i], i);
+						
 						logd("File created: " + target_keypoints_path);
 					}
 
@@ -321,12 +339,46 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 	}
 
+	protected void generateCroppedAnnotation(Mat warped_target, String target_files, int image_index) {
+		try {
+			// Parse cheerios.xml
+			XMLTestImageSet xmlParser = new XMLTestImageSet(this, R.xml.abstracts, 1);
+			
+			List<String> annotations = xmlParser.getFeatures();
+			
+			List<List<Point>> annotationsCoords = new LinkedList<List<Point>>();
+			
+			for(String annotation : annotations){
+				annotationsCoords.add(xmlParser.getShapePoints(annotation));
+			}
+			
+			Mat[] croppedAnnotations = mCV.cropImage(warped_target, annotationsCoords);
+			String outputFolder = getOutputFolderPath_croppedAnnotations();
+			
+			for(int i = 0 ; i < croppedAnnotations.length ;i++){
+				Bitmap output_bmp = Bitmap.createBitmap(croppedAnnotations[i].width(),
+						croppedAnnotations[i].height(), Config.ARGB_8888);
+				
+				Utils.matToBitmap(croppedAnnotations[i], output_bmp);
+				
+				Utility.saveBitmapToFile(output_bmp, outputFolder + image_index + "_" + i + "_" + annotations.get(i) + ".bmp");	
+			}
+			
+			
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} catch (XmlPullParserException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
 
 	/*
 	 * Compute homography matrix and then do the transformation and finally
 	 * generate an output image
 	 */
-	protected void generateHomographyWarpedImage(Mat reference_img,
+	protected Mat generateHomographyWarpedImage(Mat reference_img,
 			Mat target_img, MatOfKeyPoint ref_kp, MatOfKeyPoint target_kp,
 			MatOfDMatch descriptors, String output_path) {
 
@@ -348,21 +400,23 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		Utility.saveBitmapToFile(target_warped_bmp, output_path);
 
+		return target_warped_img;
 	}
-	
+
 	protected void generateInlierCorrespondenceOutput(Mat reference_img,
 			MatOfKeyPoint ref_kp, Mat target_img, MatOfKeyPoint target_kp,
 			MatOfDMatch descriptors, String output_path) {
-		
-		MatOfKeyPoint kps[] = mCV.getInlierCorrespondences(descriptors, ref_kp, target_kp);
+
+		MatOfKeyPoint kps[] = mCV.getInlierCorrespondences(descriptors, ref_kp,
+				target_kp);
 
 		// Mat of reference to target correspondences drawn on
 		// it
 		Mat correspondence_image = new Mat();
 
 		// Draw the correspondence
-		mCV.drawMatches(reference_img, kps[0], target_img, kps[1],
-				descriptors, correspondence_image);
+		mCV.drawMatches(reference_img, kps[0], target_img, kps[1], descriptors,
+				correspondence_image);
 
 		// Instantiate a new Bitmap
 		Bitmap correspondence_image_bmp = Bitmap.createBitmap(
@@ -374,15 +428,14 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		// Save the bitmap
 		Utility.saveBitmapToFile(correspondence_image_bmp, output_path);
-		
+
 	}
 
 	/*
 	 * 
-	 * Generate an image where the correspondences between
-	 * the reference image and the target image is drawn. 
-	 * These correspondences are including inliers and non-inliers.
-	 * 
+	 * Generate an image where the correspondences between the reference image
+	 * and the target image is drawn. These correspondences are including
+	 * inliers and non-inliers.
 	 */
 	protected void generateCorrespondenceOutput(Mat reference_img,
 			MatOfKeyPoint ref_kp, Mat target_img, MatOfKeyPoint target_kp,
@@ -412,7 +465,6 @@ public class MainActivity extends Activity implements LoggerInterface,
 	/*
 	 * 
 	 * Generate an image with detected keypoints drawn on it
-	 * 
 	 */
 	protected void generateKeypointsOutput(Mat target_img,
 			MatOfKeyPoint target_kp, String output_path) {
@@ -525,12 +577,11 @@ public class MainActivity extends Activity implements LoggerInterface,
 		return outputPath.getAbsolutePath();
 
 	}
-	
+
 	/*
 	 * Given an input image, returns the path of where the correspondence image
 	 * (an image where features between reference and the image is drawn on it)
-	 * would be stored)
-	 * [Only inliers correspondeces is drawn]
+	 * would be stored) [Only inliers correspondeces is drawn]
 	 */
 	public String getOutputImagePath_inlierCorrespondence(String target_files) {
 		File input = new File(target_files);
@@ -575,7 +626,19 @@ public class MainActivity extends Activity implements LoggerInterface,
 				0, i) + "_warped.bmp");
 
 		return outputPath.getAbsolutePath();
+	}
+	
+	/*
+	 * Given an input image, the folder to put the cropped annotations
+	 */
+	public String getOutputFolderPath_croppedAnnotations() {
+		File outputPath = new File(getOutputPolygonFolderPath());
+		String path = outputPath.getAbsolutePath();
 
+		if(path.charAt(path.length() - 1) != '/')
+			path += '/';
+		
+		return path;
 	}
 
 	/*
@@ -707,6 +770,20 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		File workspace_folder = new File(workspace_path
 				+ OUTPUT_IMAGE_FOLDER_NAME);
+		workspace_folder.mkdirs();
+
+		return workspace_folder.getAbsolutePath();
+	}
+	
+	public String getOutputPolygonFolderPath() {
+		String workspace_path = getWorkspacePath();
+
+		if (workspace_path.charAt(workspace_path.length() - 1) != '/') {
+			workspace_path += "/";
+		}
+
+		File workspace_folder = new File(workspace_path
+				+ OUTPUT_POLYGON_IMAGE_FOLDER_NAME);
 		workspace_folder.mkdirs();
 
 		return workspace_folder.getAbsolutePath();
@@ -860,9 +937,15 @@ public class MainActivity extends Activity implements LoggerInterface,
 	}
 
 	@Override
-	public void loge(String msg) {
+	public void loge(final String msg) {
 		Log.e(TAG, msg);
-		Toast.makeText(this, msg, Toast.LENGTH_SHORT).show();
+		mHandler.post(new Runnable() {
+			
+			@Override
+			public void run() {
+				Toast.makeText(mContext, msg, Toast.LENGTH_SHORT).show();
+			}
+		});
 	}
 
 	@Override
