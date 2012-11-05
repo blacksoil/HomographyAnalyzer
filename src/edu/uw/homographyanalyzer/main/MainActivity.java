@@ -119,7 +119,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 	private ComputerVision mCV;
 
 	// RANSAC threshold value for homography transformation
-	private int mRansacTreshold = 3;
+	private double mRansacTreshold = 3;
 
 	// The kind of feature detector to be used
 	private final static int FEATURE_DETECTOR = FeatureDetector.ORB;
@@ -154,12 +154,11 @@ public class MainActivity extends Activity implements LoggerInterface,
 		txtWorkspaceName = (EditText) findViewById(R.id.txtWorkspaceName);
 		txtRansacTreshold = (EditText) findViewById(R.id.txtRansacTreshold);
 		txtLogging = (EditText) findViewById(R.id.txtLogging);
-
+		
 		for (int i = 0; i < NUM_OF_BUTTONS; i++) {
 			mButtons[i].setOnClickListener(this);
 			mButtons[i].setEnabled(false);
 		}
-
 	}
 
 	// UI Button click handler
@@ -195,7 +194,14 @@ public class MainActivity extends Activity implements LoggerInterface,
 
 		// Compute
 		else if (v.getId() == btnCompute.getId()) {
-			compute();
+			try{
+				// Parses ransac threshold
+				mRansacTreshold = Double.parseDouble(txtRansacTreshold.getText().toString());
+				compute();
+			}
+			catch(NumberFormatException e){
+				loge("Invalid ransac threshold value!");
+			}
 		}
 
 	}
@@ -219,7 +225,7 @@ public class MainActivity extends Activity implements LoggerInterface,
 							reference_img);
 
 					// Compute the descriptor
-					Mat reference_descriptor = Utility.computeDescriptors(
+					Mat reference_descriptor = mCV.computeDescriptors(
 							reference_img, ref_kp, DESCRIPTOR_EXTRACTOR);
 
 					// Get each of the target images
@@ -236,24 +242,19 @@ public class MainActivity extends Activity implements LoggerInterface,
 						// Compute the target image keypoints
 						MatOfKeyPoint target_kp = mCV.findKeyPoints(
 								FEATURE_DETECTOR, target_img);
+
 						logd("Number of keypoints: " + target_kp.size().height
 								* target_kp.size().width);
 
 						// Compute the target's descriptor
-						Mat target_descriptor = Utility.computeDescriptors(
+						Mat target_descriptor = mCV.computeDescriptors(
 								target_img, target_kp, DESCRIPTOR_EXTRACTOR);
 
-						// Target mat with keypoints drawn on it
-						Mat target_with_keypoints = new Mat();
-
-						// Mat of reference to target correspondences drawn on
-						// it
-						Mat correspondence_image = new Mat();
-
-						// Grab the matching keypoints of the target image
-						MatOfDMatch descriptors = Utility
-								.getMatchingCorrespondences(
-										target_descriptor,reference_descriptor);
+						// Filter out keypoints that don't match between
+						// the target and the reference
+						MatOfDMatch descriptors = mCV
+								.getMatchingCorrespondences(target_descriptor,
+										reference_descriptor);
 
 						// Inlier keypoints
 						// MatOfKeyPoint target_kp_filtered =
@@ -263,65 +264,34 @@ public class MainActivity extends Activity implements LoggerInterface,
 						// target_kp_filtered.size().height *
 						// target_kp_filtered.size().width);
 
-						Utility.drawMatches(reference_img, ref_kp, target_img,
-								target_kp, descriptors,
-								correspondence_image);
-
-						Utility.drawKeypoints_RGBA(target_img,
-								target_with_keypoints, target_kp);
-
-						MatOfPoint2f pts[] = Utility.getCorrespondences(
-								descriptors, ref_kp, target_kp);
-
-						// Compute the homography matrix
-						Mat H = Calib3d.findHomography(pts[1], pts[0],
-								Calib3d.RANSAC, mRansacTreshold);
-						
-
-						Mat target_warped_img = new Mat();
-						Imgproc.warpPerspective(
-								target_img,
-								target_warped_img,
-								H,
-								new Size(reference_img.width(), reference_img
-										.height()));
-
-						Bitmap target_warped_bmp = Bitmap.createBitmap(
-								reference_img.width(),
-								reference_img.height(),
-								Config.ARGB_8888);
-						
-						// Bitmap with keypoints
-						Bitmap target_with_keypoints_bmp = Bitmap.createBitmap(
-								target_with_keypoints.width(),
-								target_with_keypoints.height(),
-								Config.ARGB_8888);
-
-						Bitmap correspondence_image_bmp = Bitmap
-								.createBitmap(correspondence_image.width(),
-										correspondence_image.height(),
-										Config.ARGB_8888);
-
-						Utils.matToBitmap(target_with_keypoints,
-								target_with_keypoints_bmp);
-
-						Utils.matToBitmap(correspondence_image,
-								correspondence_image_bmp);
-						
-						Utils.matToBitmap(target_warped_img,target_warped_bmp);
-
 						// The path to store the result
 						String target_keypoints_path = getOutputImagePath_keypoint(target_files[i]);
 						String target_correspondence_path = getOutputImagePath_correspondence(target_files[i]);
+						String target_inlier_correspondence_path = getOutputImagePath_inlierCorrespondence(target_files[i]);
 						String target_warped_path = getOutputImagePath_warped(target_files[i]);
-						
-						Utility.saveBitmapToFile(target_with_keypoints_bmp,
+
+						// Generate a target image with keypoints drawn on it
+						generateKeypointsOutput(target_img, target_kp,
 								target_keypoints_path);
-						Utility.saveBitmapToFile(correspondence_image_bmp,
+
+						// Generate an image where the correspondence between
+						// the
+						// reference and the target image is drawn
+						generateCorrespondenceOutput(reference_img, ref_kp,
+								target_img, target_kp, descriptors,
 								target_correspondence_path);
-						Utility.saveBitmapToFile(target_warped_bmp,
-								target_warped_path);
+
+						// Like above but just inlier
+						generateInlierCorrespondenceOutput(reference_img, ref_kp,
+								target_img, target_kp, descriptors,
+								target_inlier_correspondence_path);
 						
+						// Do the homography computation, warping, and finally
+						// generate the output image
+						generateHomographyWarpedImage(reference_img,
+								target_img, ref_kp, target_kp, descriptors,
+								target_warped_path);
+
 						logd("File created: " + target_keypoints_path);
 					}
 
@@ -342,12 +312,125 @@ public class MainActivity extends Activity implements LoggerInterface,
 					});
 				}
 			}
+
 		};
 
 		// Separate Thread to do the heavy computation
 		Thread computeThread = new Thread(computation);
 		computeThread.start();
 
+	}
+
+
+	/*
+	 * Compute homography matrix and then do the transformation and finally
+	 * generate an output image
+	 */
+	protected void generateHomographyWarpedImage(Mat reference_img,
+			Mat target_img, MatOfKeyPoint ref_kp, MatOfKeyPoint target_kp,
+			MatOfDMatch descriptors, String output_path) {
+
+		MatOfPoint2f pts[] = mCV.getCorrespondences(descriptors, ref_kp,
+				target_kp);
+
+		// Compute the homography matrix
+		Mat H = Calib3d.findHomography(pts[1], pts[0], Calib3d.RANSAC,
+				mRansacTreshold);
+
+		Mat target_warped_img = new Mat();
+		Imgproc.warpPerspective(target_img, target_warped_img, H, new Size(
+				reference_img.width(), reference_img.height()));
+
+		Bitmap target_warped_bmp = Bitmap.createBitmap(reference_img.width(),
+				reference_img.height(), Config.ARGB_8888);
+
+		Utils.matToBitmap(target_warped_img, target_warped_bmp);
+
+		Utility.saveBitmapToFile(target_warped_bmp, output_path);
+
+	}
+	
+	protected void generateInlierCorrespondenceOutput(Mat reference_img,
+			MatOfKeyPoint ref_kp, Mat target_img, MatOfKeyPoint target_kp,
+			MatOfDMatch descriptors, String output_path) {
+		
+		MatOfKeyPoint kps[] = mCV.getInlierCorrespondences(descriptors, ref_kp, target_kp);
+
+		// Mat of reference to target correspondences drawn on
+		// it
+		Mat correspondence_image = new Mat();
+
+		// Draw the correspondence
+		mCV.drawMatches(reference_img, kps[0], target_img, kps[1],
+				descriptors, correspondence_image);
+
+		// Instantiate a new Bitmap
+		Bitmap correspondence_image_bmp = Bitmap.createBitmap(
+				correspondence_image.width(), correspondence_image.height(),
+				Config.ARGB_8888);
+
+		// Convert the matrix into bitmap
+		Utils.matToBitmap(correspondence_image, correspondence_image_bmp);
+
+		// Save the bitmap
+		Utility.saveBitmapToFile(correspondence_image_bmp, output_path);
+		
+	}
+
+	/*
+	 * 
+	 * Generate an image where the correspondences between
+	 * the reference image and the target image is drawn. 
+	 * These correspondences are including inliers and non-inliers.
+	 * 
+	 */
+	protected void generateCorrespondenceOutput(Mat reference_img,
+			MatOfKeyPoint ref_kp, Mat target_img, MatOfKeyPoint target_kp,
+			MatOfDMatch descriptors, String output_path) {
+
+		// Mat of reference to target correspondences drawn on
+		// it
+		Mat correspondence_image = new Mat();
+
+		// Draw the correspondence
+		mCV.drawMatches(reference_img, ref_kp, target_img, target_kp,
+				descriptors, correspondence_image);
+
+		// Instantiate a new Bitmap
+		Bitmap correspondence_image_bmp = Bitmap.createBitmap(
+				correspondence_image.width(), correspondence_image.height(),
+				Config.ARGB_8888);
+
+		// Convert the matrix into bitmap
+		Utils.matToBitmap(correspondence_image, correspondence_image_bmp);
+
+		// Save the bitmap
+		Utility.saveBitmapToFile(correspondence_image_bmp, output_path);
+
+	}
+
+	/*
+	 * 
+	 * Generate an image with detected keypoints drawn on it
+	 * 
+	 */
+	protected void generateKeypointsOutput(Mat target_img,
+			MatOfKeyPoint target_kp, String output_path) {
+
+		// Target mat with keypoints drawn on it
+		Mat target_with_keypoints = new Mat();
+
+		// Draw the keypoints and output the new mat
+		mCV.drawKeypoints_RGBA(target_img, target_with_keypoints, target_kp);
+
+		// Bitmap with keypoints
+		Bitmap target_with_keypoints_bmp = Bitmap.createBitmap(
+				target_with_keypoints.width(), target_with_keypoints.height(),
+				Config.ARGB_8888);
+
+		Utils.matToBitmap(target_with_keypoints, target_with_keypoints_bmp);
+
+		Utility.saveBitmapToFile(target_with_keypoints_bmp, output_path);
 	}
 
 	/*
@@ -444,8 +527,35 @@ public class MainActivity extends Activity implements LoggerInterface,
 	}
 	
 	/*
-	 * Given an input image, returns the path of where the warped image
-	 * would be stored
+	 * Given an input image, returns the path of where the correspondence image
+	 * (an image where features between reference and the image is drawn on it)
+	 * would be stored)
+	 * [Only inliers correspondeces is drawn]
+	 */
+	public String getOutputImagePath_inlierCorrespondence(String target_files) {
+		File input = new File(target_files);
+		String input_name = input.getName();
+		int i;
+		for (i = input_name.length() - 1; i >= 0; i--) {
+			if (input_name.charAt(i) == '.') {
+				break;
+			}
+		}
+
+		if (i == 0) {
+			throw new RuntimeException("Path doesn't have file extension: " + i);
+		}
+
+		File outputPath = new File(getOutputFolderPath(), input_name.substring(
+				0, i) + "_correspondence_inliers.bmp");
+
+		return outputPath.getAbsolutePath();
+
+	}
+
+	/*
+	 * Given an input image, returns the path of where the warped image would be
+	 * stored
 	 */
 	public String getOutputImagePath_warped(String target_files) {
 		File input = new File(target_files);
@@ -467,7 +577,6 @@ public class MainActivity extends Activity implements LoggerInterface,
 		return outputPath.getAbsolutePath();
 
 	}
-
 
 	/*
 	 * Given an absolute image path returns its bitmap
